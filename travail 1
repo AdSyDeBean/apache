@@ -1,1 +1,190 @@
+#!/bin/bash
+clear
+#Travail 1 – Mettre en place un script d’installation d’un site de base d’Apache
+
+
+# Vérification si l'utilisateur a les privilèges d'administration
+if [ "$EUID" -ne 0 ]
+then
+  echo "Ce script doit être exécuté en tant qu'administrateur."
+  exit 1
+fi
+
+# Mise à jour des paquets disponibles
+apt update
+
+# Installation d'Apache2
+apt install apache2 -y
+
+# Démarrage du service Apache2
+systemctl start apache2
+
+# Activation d'Apache2 pour qu'il démarre automatiquement au démarrage
+systemctl enable apache2
+
+# Afficher le statut d'Apache2
+systemctl status apache2
+
+echo "Apache2 est installé et en cours d'exécution."
+
+exit 0
+
+# Vérifier si Apache2 est installé
+if apache2 -v &>/dev/null; then
+  echo "Apache2 est installé sur ce système."
+  
+  # Obtenir la version d'Apache2
+  apache_version=$(apache2 -v | grep -o 'Apache/[0-9.]*')
+  echo "Version d'Apache2 : $apache_version"
+  
+  # Lister les paquets Apache2 installés
+  echo "Paquets Apache2 installés :"
+  dpkg -l | grep apache2
+else
+  echo "Apache2 n'est pas installé sur ce système."
+fi
+
+# Vérifier si Apache2 est installé
+if dpkg -l | grep -q "apache2"; then
+  echo "Apache2 est installé sur ce système."
+else
+  echo "Apache2 n'est pas installé sur ce système."
+fi
+
+# Vérifier si Apache n'est pas installé
+if ! which apache2 >/dev/null 2>&1; then
+  echo "Apache n'est pas installé sur ce système."
+else
+  echo "Apache est installé sur ce système."
+fi
+
+# Vérifier si Apache est installé
+if ! command -v apache2 &>/dev/null; then
+    echo "Apache n'est pas installé. Installation d'Apache..."
+    sudo apt update
+    sudo apt install apache2 apache2-doc -y
+else
+    echo "Apache est déjà installé."
+fi
+
+#Mettre en place un script d’installation d’un site supplémentaire sur la base de apache2
+
+#!/bin/bash
+
+# Vérification si l'utilisateur a les privilèges d'administration
+if [ "$EUID" -ne 0 ]; then
+  echo "Ce script doit être exécuté en tant qu'administrateur."
+  exit 1
+fi
+
+# Demander le nom de domaine du nouveau site
+read -p "Entrez le nom de domaine du nouveau site (ex. monsite.com) : " domain_name
+
+# Vérifier si le domaine existe déjà dans la configuration Apache
+if [ -f "/etc/apache2/sites-available/$domain_name.conf" ]; then
+  echo "Le domaine $domain_name existe déjà dans la configuration d'Apache."
+  exit 1
+fi
+
+# Créer un répertoire pour le nouveau site dans /var/www/html
+site_directory="/var/www/html/$domain_name"
+mkdir -p "$site_directory"
+
+# Créer une page d'accueil basique pour le nouveau site
+echo "<html><head><title>$domain_name</title></head><body><h1>Bienvenue sur $domain_name</h1></body></html>" > "$site_directory/index.html"
+
+# Créer un fichier de configuration Apache pour le nouveau site
+cat <<EOF > "/etc/apache2/sites-available/$domain_name.conf"
+<VirtualHost *:80>
+    ServerAdmin webmaster@$domain_name
+    ServerName $domain_name
+    DocumentRoot $site_directory
+    ErrorLog \${APACHE_LOG_DIR}/error.log
+    CustomLog \${APACHE_LOG_DIR}/access.log combined
+</VirtualHost>
+EOF
+
+# Activer la configuration du nouveau site
+a2ensite "$domain_name"
+
+# Redémarrer Apache2 pour appliquer les modifications
+systemctl restart apache2
+
+# Afficher un message de confirmation
+echo "Le site $domain_name a été ajouté avec succès."
+
+exit 0
+
+#Mettre en place un certificat autosigné automatisé
+
+#!/bin/bash
+
+# Vérification si l'utilisateur a les privilèges d'administration
+if [ "$EUID" -ne 0 ]; then
+  echo "Ce script doit être exécuté en tant qu'administrateur."
+  exit 1
+fi
+
+# Installation du module mod_ssl pour Apache2
+apt update
+apt install apache2 -y
+apt install openssl -y
+a2enmod ssl
+
+# Chemin du répertoire où les certificats seront stockés
+cert_dir="/etc/ssl/certs"
+
+# Chemin du fichier de certificat
+cert_file="$cert_dir/monsite.crt"
+
+# Chemin du fichier de clé privée
+key_file="$cert_dir/monsite.key"
+
+# Vérifier si le certificat existe déjà
+if [ -f "$cert_file" ]; then
+  echo "Un certificat existe déjà."
+else
+  # Générer un certificat SSL auto-signé
+  openssl req -x509 -nodes -days 365 -newkey rsa:2048 -keyout "$key_file" -out "$cert_file" -subj "/CN=monsite.com"
+  
+  # Assurer que les fichiers de certificat et de clé sont accessibles uniquement à l'utilisateur root
+  chmod 600 "$key_file" "$cert_file"
+fi
+
+# Configuration SSL pour Apache2
+ssl_conf="/etc/apache2/sites-available/default-ssl.conf"
+cat <<EOF > "$ssl_conf"
+<IfModule mod_ssl.c>
+    <VirtualHost _default_:443>
+        ServerAdmin webmaster@localhost
+        ServerName monsite.com
+        DocumentRoot /var/www/html
+
+        ErrorLog \${APACHE_LOG_DIR}/error.log
+        CustomLog \${APACHE_LOG_DIR}/access.log combined
+
+        SSLEngine on
+        SSLCertificateFile $cert_file
+        SSLCertificateKeyFile $key_file
+
+        <FilesMatch "\.(cgi|shtml|phtml|php)$">
+            SSLOptions +StdEnvVars
+        </FilesMatch>
+        <Directory /usr/lib/cgi-bin>
+            SSLOptions +StdEnvVars
+        </Directory>
+    </VirtualHost>
+</IfModule>
+EOF
+
+# Activer le site SSL
+a2ensite default-ssl
+
+# Redémarrage d'Apache2 pour appliquer les modifications
+systemctl restart apache2
+
+echo "SSL/TLS est activé pour Apache2."
+
+exit 0
+
 
